@@ -1,0 +1,25 @@
+# 环境与缓存
+.venv/
+__pycache__/
+*.pyc
+
+# 本地配置（含密钥）
+.env
+
+# 运行时生成的产物
+data/sales_clean.csv
+data/daily_report_*.xlsx
+data/processed_images/
+data/sample_images/
+data/wechat_alerts.log
+backups/
+logs/trace.jsonl
+
+# 评估产物（基线/优化/对比图）
+eval/last_run.json
+eval/baseline_run.json
+eval/comparison.png
+# 本地业务数据（SQLite / 日志）
+data/ops.db
+data/ops.db-*
+data/alerts.log
