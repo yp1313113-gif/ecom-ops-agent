@@ -17,6 +17,7 @@ from tools.report_tool import generate_daily_report
 from tools.image_tool import batch_process_images
 from tools.backup_tool import backup_data
 from tools.oversell_tool import oversell_check, oversell_scan
+from tools.platform_sync_tool import sync_platform_stock, list_platform_plugins
 from memory import remember_preference, recall_preference
 
 __all__ = [
@@ -28,6 +29,8 @@ __all__ = [
     "backup_data",
     "oversell_check",
     "oversell_scan",
+    "sync_platform_stock",
+    "list_platform_plugins",
     "remember_preference",
     "recall_preference",
 ]

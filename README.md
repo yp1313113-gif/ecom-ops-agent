@@ -47,6 +47,10 @@
 - **★ 超卖检测三阶段评测**：28 条仿真用例（真值写死），检出率 **41% → 100%**，误报 **0 → 4 → 0**
 - **★ 闭环：人工介入率 100% → 15%**：人工确认的水位规则沉淀入库，同类 SKU 自动套用
 - **★ 三层记忆**：会话 / 偏好（跨会话，带作用域与来源门控）/ 业务规则 —— 见第四节
+- **★ 平台插件化**：`plugins/sources/` 一个平台一个文件，**加平台 = 加文件，主流程零改动**。
+  插件接口用**三态快照**（正常 / 未上架 / 不可用）而不是 `int|None` ——
+  「读不到」绝不写成 0（那会凭空造出展示库存、改变均分基位、污染超卖判定）；
+  **单个平台接口抖动被隔离**，其余平台照常同步
 - **结构化 ToolResult**：所有工具返回 `success / data / warnings / errors`，业务失败显式可见
 - **中间件三件套**：指数退避重试 + 熔断器（5 次失败/30s 恢复）+ 全链路 JSONL trace
 - **推送通道适配器**：企业微信 / 飞书 / 钉钉三种 webhook，未配置时自动降级为本地日志
@@ -183,36 +187,42 @@ python run.py
 
 ## 六、架构
 
+```mermaid
+flowchart TB
+    U["用户自然语言"] --> AG["ReAct Agent (DeepSeek)<br/>system_prompt 约束角色"]
+
+    AG --> RT["agent_core.run_tool 中间件<br/><b>熔断 → 重试 → trace</b>"]
+
+    RT --> T1["clean_sales_data"]
+    RT --> T2["sync_orders"]
+    RT --> T3["monitor_platforms"]
+    RT --> T4["generate_daily_report"]
+    RT --> T5["batch_process_images"]
+    RT --> T6["backup_data"]
+    RT --> T7["<b>oversell_check</b><br/>单 SKU 超卖风险"]
+    RT --> T8["<b>oversell_scan ★</b><br/>全量巡检"]
+    RT --> T9["remember_preference<br/>recall_preference"]
+
+    T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 --> TR["ToolResult<br/>success / data / warnings / errors"]
+    TR --> TRACE[("logs/trace.jsonl<br/>全链路可观测")]
+
+    T7 & T8 --> ST[("store.py · SQLite<br/>平台库存 / 订单 / 仓库库存")]
+    T7 & T8 --> WL[("water_level_rules<br/>水位规则（人工确认后沉淀）")]
+    T9 --> PF[("preferences<br/>偏好记忆（作用域 + 来源门控）")]
+    T7 & T8 -.读默认值.-> PF
+    T3 --> NT["notifier<br/>企微 / 飞书 / 钉钉"]
+
+    ST & WL --> EV["eval/<br/>28 条用例三版本对照 + 12 轮闭环"]
 ```
-用户自然语言
-     │
-     ▼
-┌─────────────────────────────┐
-│   ReAct Agent (DeepSeek)    │   ← 路由决策 + 工具编排
-│   system_prompt 约束角色    │
-└─────────────────────────────┘
-     │ 调用 run_tool(fn, ...)
-     ▼
-┌─────────────────────────────┐
-│ agent_core.run_tool 中间件  │   ← 三件套：
-│  · 熔断器 (CircuitBreaker)  │
-│  · 指数退避重试 (retry)     │
-│  · JSONL trace 落盘         │
-└─────────────────────────────┘
-     │
-     ▼
-┌────────┬────────┬────────┬────────┬────────┬────────┬────────┬────────┐
-│ clean_ │ sync_  │ monitor│ gener- │ batch_ │ backup │ oversell_check   │
-│ sales_ │ orders │ _plat- │ ate_   │ process│ _data  │ oversell_scan ★  │
-│ data   │        │ forms  │ daily_ │ _images│        │                  │
-└────────┴────────┴────────┴────────┴────────┴────────┴────────┴────────┘
-         每个工具返回 ToolResult(success, data, warnings, errors)
-                                                          │
-                                                          ▼
-                                            store.py (SQLite)
-                                            · 平台库存 / 订单 / 仓库
-                                            · 水位规则（闭环沉淀）
-```
+
+> 📐 **完整的目录职责、核心运行链路、架构不变量与设计取舍见 [ARCHITECTURE.md](ARCHITECTURE.md)。**
+>
+> 机制文档：
+> [超卖防控与三版本演进](docs/mechanisms/oversell.md) ·
+> [评测设计](docs/mechanisms/evaluation.md) ·
+> [偏好记忆](docs/mechanisms/memory.md) ·
+> [工具中间件](docs/mechanisms/middleware.md) ·
+> [优化日志](docs/OPTIMIZATION_LOG.md)
 
 ---
 

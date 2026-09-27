@@ -21,6 +21,8 @@ from tools import (
     backup_data,
     oversell_check,
     oversell_scan,
+    sync_platform_stock,
+    list_platform_plugins,
     remember_preference,
     recall_preference,
 )
@@ -34,6 +36,8 @@ AGENT_TOOLS = [
     backup_data,
     oversell_check,
     oversell_scan,
+    sync_platform_stock,
+    list_platform_plugins,
     remember_preference,
     recall_preference,
 ]
@@ -50,6 +54,8 @@ SYSTEM_PROMPT = """你是一个「电商运营自动化 Agent」，服务于中�
 - backup_data：把数据目录做本地异地备份（可选上传网盘）
 - oversell_check：检查某个 SKU 的多平台超卖风险（可用库存 vs 各平台展示库存）
 - oversell_scan：全量巡检，列出所有存在超卖风险的 SKU 与总缺口
+- sync_platform_stock：从各平台插件拉取展示库存并落库（单平台失败会被隔离，不影响其他平台）
+- list_platform_plugins：列出当前支持哪些平台（能力自描述）
 - remember_preference：记住一条长期设置（如「以后安全库存按 10 算」），跨会话生效
 - recall_preference：读取已记住的设置
 

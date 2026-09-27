@@ -261,8 +261,53 @@ def reset_rules() -> None:
     conn.close()
 
 
+def list_skus() -> list[str]:
+    """所有已知 SKU（仓库 / 平台库存 / 订单的并集，有序去重）。
+
+    「已知」的三种来源都要算上：只在某个平台有库存但没有仓库记录的 SKU，
+    也应该被巡检到 —— 漏掉它就是一个盲区。
+    """
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT sku FROM warehouse_stock
+           UNION SELECT sku FROM platform_inventory
+           UNION SELECT sku FROM orders
+           ORDER BY sku"""
+    ).fetchall()
+    conn.close()
+    return [r["sku"] for r in rows]
+
+
+# 回退用的平台计划（插件系统不可用时仍然能演示 —— 不做「要么全有要么全无」）
+_FALLBACK_PLAN = [("taobao", 50, 12), ("douyin", 40, 15), ("pdd", 30, 18), ("jd", 20, 9)]
+
+
+def _demo_plan() -> list[tuple[str, int, int]]:
+    """演示种子计划：**从插件注册表读**，而不是硬编码。
+
+    加一个平台插件，演示数据里就自动多一个平台 —— 这就是「加平台 = 加一个文件」
+    在数据准备环节的体现。
+
+    插件系统不可用时回退到内置计划并告警（可插拔 ≠ 要么全有要么全无）。
+    """
+    try:
+        import plugins
+        plan = []
+        for info, cls in plugins.platforms():
+            stock = int(getattr(cls, "demo_stock", 0) or 0)
+            order = int(getattr(cls, "demo_order", 0) or 0)
+            if stock > 0 or order > 0:
+                plan.append((info.name, stock, order))
+        if plan:
+            return plan
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[store] 平台插件不可用，演示计划回退内置: {e}")
+    return list(_FALLBACK_PLAN)
+
+
 def seed_demo(quiet: bool = False) -> None:
-    """造一份最小可演示数据：一个 SKU 在 4 个平台卖，但总量超了。
+    """造一份最小可演示数据：一个 SKU 在多个平台卖，但总量超了。
 
     Args:
         quiet: True 时不打印，供 demo / app 反复调用。
@@ -271,28 +316,24 @@ def seed_demo(quiet: bool = False) -> None:
     reset()
 
     sku = "A001"
-    set_warehouse_stock(sku, 80)          # 仓库只有 80 件
-    set_platform_inventory("taobao", sku, 50)
-    set_platform_inventory("douyin", sku, 40)
-    set_platform_inventory("pdd",    sku, 30)
-    set_platform_inventory("jd",     sku, 20)
-    # 4 个平台展示合计 140 件 > 仓库 80 件 —— 展示层面就已经超了
+    plan = _demo_plan()
+    warehouse = 80
+    set_warehouse_stock(sku, warehouse)      # 仓库只有 80 件
 
     base = datetime.now() - timedelta(hours=6)
-    plan = [
-        ("T001", "taobao", 12),
-        ("D001", "douyin", 15),
-        ("P001", "pdd",    18),
-        ("J001", "jd",      9),
-    ]
-    for i, (oid, plat, qty) in enumerate(plan):
-        insert_order(oid, plat, sku, qty, "paid",
-                     (base + timedelta(minutes=10 * i)).strftime("%Y-%m-%d %H:%M:%S"))
+    for i, (plat, stock, order_qty) in enumerate(plan):
+        set_platform_inventory(plat, sku, stock)
+        if order_qty > 0:
+            insert_order(f"{plat[:1].upper()}001", plat, sku, order_qty, "paid",
+                         (base + timedelta(minutes=10 * i)).strftime("%Y-%m-%d %H:%M:%S"))
+    # 平台展示合计远超仓库 —— 展示层面就已经超了
 
     if not quiet:
+        shown = sum(r["qty"] for r in list_platform_inventory(sku))
         print(f"✅ 演示数据已写入 {DB_PATH}")
-        print(f"   仓库库存 {get_warehouse_stock(sku)} / 在途占用 {in_transit_qty(sku)}")
-        print(f"   平台展示合计 {sum(r['qty'] for r in list_platform_inventory(sku))}")
+        print(f"   平台（来自插件注册表）: {[p[0] for p in plan]}")
+        print(f"   仓库库存 {get_warehouse_stock(sku)} / 在途占用 {in_transit_qty(sku)}"
+              f" / 平台展示合计 {shown}")
 
 
 if __name__ == "__main__":
